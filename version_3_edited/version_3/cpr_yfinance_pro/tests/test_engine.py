@@ -1,7 +1,13 @@
 import unittest
 from datetime import datetime,date
+import json
+import tempfile
+import time
+from pathlib import Path
 from zoneinfo import ZoneInfo
 import pandas as pd
+from unittest.mock import patch
+import engine
 from engine import cpr,overlap,previous_periods,analyze
 class TestCPR(unittest.TestCase):
  def test_formula(self):
@@ -14,4 +20,19 @@ class TestCPR(unittest.TestCase):
  def test_adv_filter(self):
   ix=pd.bdate_range('2026-09-01','2026-11-09');f=pd.DataFrame({'High':110,'Low':90,'Close':100,'Volume':1_000_000},index=ix)
   self.assertIsNone(analyze(f,'AAA','NASDAQ','Technology',datetime(2026,11,10,tzinfo=ZoneInfo('America/New_York'))))
+ def test_unknown_sector_cache_is_retried(self):
+  with tempfile.TemporaryDirectory() as directory:
+   cache=Path(directory)/'sectors.json'
+   cache.write_text(json.dumps({'AAA':{'sector':'Unknown','ts':time.time()}}))
+   with patch.object(engine,'CACHE',Path(directory)),patch.object(engine.yf,'Ticker') as ticker:
+    ticker.return_value.get_info.return_value={'sector':'Technology'}
+    self.assertEqual(engine.get_sectors(['AAA']),{'AAA':'Technology'})
+    self.assertEqual(ticker.call_count,1)
+    self.assertEqual(json.loads(cache.read_text())['AAA']['sector'],'Technology')
+ def test_missing_sector_is_not_cached(self):
+  with tempfile.TemporaryDirectory() as directory:
+   with patch.object(engine,'CACHE',Path(directory)),patch.object(engine.yf,'Ticker') as ticker:
+    ticker.return_value.get_info.return_value={}
+    self.assertEqual(engine.get_sectors(['AAA']),{'AAA':'Unknown'})
+    self.assertFalse((Path(directory)/'sectors.json').exists())
 if __name__=='__main__':unittest.main()
