@@ -152,12 +152,16 @@ def get_sectors(symbols,progress=None):
     result={};changed=False
     for i,sym in enumerate(symbols):
         old=saved.get(sym)
-        if old and time.time()-old.get('ts',0)<30*86400:
+        if old and old.get('sector') and old.get('sector')!='Unknown' and time.time()-old.get('ts',0)<30*86400:
             result[sym]=old['sector'];continue
         try:
-            info=yf.Ticker(sym).get_info(); sector=info.get('sector') or 'Unknown'
+            info=yf.Ticker(sym).get_info(); sector=info.get('sector')
         except Exception as e:
-            logging.warning('Sector unavailable %s: %s',sym,e);sector='Unknown'
+            logging.warning('Sector unavailable %s: %s',sym,e);sector=None
+        if not sector:
+            logging.warning('Yahoo returned no sector for %s; it will be retried on the next scan',sym)
+            result[sym]='Unknown'
+            continue
         result[sym]=sector;saved[sym]={'sector':sector,'ts':time.time()};changed=True
         if changed and i%25==0:path.write_text(json.dumps(saved))
         if progress and i%10==0:progress('Resolving sectors',i+1,len(symbols),len(symbols))
